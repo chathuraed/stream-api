@@ -24,6 +24,11 @@ app.get('/', (req, res) => {
     res.send("Hello World");
 });
 
+
+app.get('/users', (req, res) => {
+    return res.json(users);
+});
+
 app.post('/register', async (req, res) => {
     const { email, password } = req.body;
 
