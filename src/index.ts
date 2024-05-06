@@ -18,11 +18,11 @@ interface User {
     hashed_password: string;
 }
 
-const USERS: User[] = [];
+const users: User[] = [];
 
-app.get('/', (req,res)=>{
-    return "Hello World"
-})
+app.get('/', (req, res) => {
+    res.send("Hello World");
+});
 
 app.post('/register', async (req, res) => {
     const { email, password } = req.body;
@@ -33,14 +33,13 @@ app.post('/register', async (req, res) => {
         });
     }
 
-    // Minlength 6
     if (password.length < 6) {
         return res.status(400).json({
             message: 'Password must be at least 6 characters.',
         });
     }
 
-    const existingUser = USERS.find((user) => user.email === email);
+    const existingUser = users.find(user => user.email === email);
 
     if (existingUser) {
         return res.status(400).json({
@@ -49,25 +48,22 @@ app.post('/register', async (req, res) => {
     }
 
     try {
-        const salt = genSaltSync(10); // Generate a new salt
-        const hashed_password = hashSync(password, salt); // Use the new salt
-        // Generate random id and push to in-memory users
+        const salt = genSaltSync(10);
+        const hashedPassword = hashSync(password, salt);
         const id = Math.random().toString(36).substr(2, 9);
-        const user = {
+        const user: User = {
             id,
             email,
-            hashed_password,
+            hashed_password: hashedPassword,
         };
-        USERS.push(user);
+        users.push(user);
 
-        // Create user in Stream Chat
         await client.upsertUser({
             id,
             email,
             name: email,
         });
 
-        // Create token for user
         const token = client.createToken(id);
 
         return res.json({
@@ -78,15 +74,15 @@ app.post('/register', async (req, res) => {
             },
         });
     } catch (e) {
-        return res.json({
-            message: 'User already exists.',
+        return res.status(500).json({
+            message: 'Internal server error.',
         });
     }
 });
 
 app.post('/login', async (req, res) => {
     const { email, password } = req.body;
-    const user = USERS.find((user) => user.email === email);
+    const user = users.find(user => user.email === email);
 
     if (!user) {
         return res.status(400).json({
@@ -102,7 +98,6 @@ app.post('/login', async (req, res) => {
         });
     }
 
-    // Create token for user
     const token = client.createToken(user.id);
 
     return res.json({
