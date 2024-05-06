@@ -1,24 +1,24 @@
-import express from 'express'
-import dotenv from 'dotenv'
-import { genSaltSync, hashSync } from 'bcrypt'
-import { StreamChat } from 'stream-chat'
+import express from 'express';
+import dotenv from 'dotenv';
+import { compareSync, genSaltSync, hashSync } from 'bcrypt';
+import { StreamChat } from 'stream-chat';
 
-dotenv.config()
+dotenv.config();
 
-const { PORT, STREAM_API_KEY, STREAM_API_SECRET } = process.env
+const { PORT, STREAM_API_KEY, STREAM_API_SECRET } = process.env;
 
 const client = StreamChat.getInstance(STREAM_API_KEY!, STREAM_API_SECRET);
 
-const app = express()
-app.use(express.json())
-const salt = genSaltSync(10);
+const app = express();
+app.use(express.json());
+
 interface User {
-    id: string
-    email: string
-    hashed_password: string
+    id: string;
+    email: string;
+    hashed_password: string;
 }
 
-const USERS: User[] = []
+const USERS: User[] = [];
 
 app.get('/register', async (req, res) => {
     const { email, password } = req.body;
@@ -45,8 +45,9 @@ app.get('/register', async (req, res) => {
     }
 
     try {
-        const hashed_password = hashSync(password, salt);
-        // Generate random id and push to in memory users
+        const salt = genSaltSync(10); // Generate a new salt
+        const hashed_password = hashSync(password, salt); // Use the new salt
+        // Generate random id and push to in-memory users
         const id = Math.random().toString(36).substr(2, 9);
         const user = {
             id,
@@ -77,18 +78,26 @@ app.get('/register', async (req, res) => {
             message: 'User already exists.',
         });
     }
-})
+});
 
 app.post('/login', async (req, res) => {
     const { email, password } = req.body;
     const user = USERS.find((user) => user.email === email);
-    const hashed_password = hashSync(password, salt);
 
-    if (!user || user.hashed_password !== hashed_password) {
+    if (!user) {
+        return res.status(400).json({
+            message: 'User not found.',
+        });
+    }
+
+    const isValidPassword = compareSync(password, user.hashed_password);
+
+    if (!isValidPassword) {
         return res.status(400).json({
             message: 'Invalid credentials.',
         });
     }
+
     // Create token for user
     const token = client.createToken(user.id);
 
@@ -101,7 +110,6 @@ app.post('/login', async (req, res) => {
     });
 });
 
-
 app.listen(PORT, () => {
-    console.log(`Server is listening on port ${PORT}`)
-})
+    console.log(`Server is listening on port ${PORT}`);
+});
