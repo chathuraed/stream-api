@@ -1,117 +1,117 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import { compareSync, genSaltSync, hashSync } from 'bcrypt';
-import { StreamChat } from 'stream-chat';
+import mongoose from 'mongoose';
+import { StreamClient } from '@stream-io/node-sdk';
 
 dotenv.config();
 
-const { PORT, STREAM_API_KEY, STREAM_API_SECRET } = process.env;
+const { PORT, STREAM_API_KEY, STREAM_API_SECRET, DB_STRING } = process.env;
 
-const client = StreamChat.getInstance(STREAM_API_KEY!, STREAM_API_SECRET);
+const client = new StreamClient(STREAM_API_KEY!, STREAM_API_SECRET!, { timeout: 3000 });
 
 const app = express();
 app.use(express.json());
 
-interface User {
-    id: string;
-    email: string;
-    hashed_password: string;
-}
+mongoose.connect(DB_STRING!, {
+    autoIndex: true
+}).then((res) => {
+    console.log('Database Connected');
+}).catch((err) => {
+    console.error('Error connecting to database:', err);
+});
 
-const users: User[] = [];
+const UserSchema = new mongoose.Schema({
+    email: {
+        type: String,
+        required: true
+    },
+    password: {
+        type: String,
+        required: true
+    }
+});
+
+const User = mongoose.model('User', UserSchema);
 
 app.get('/', (req, res) => {
     res.send("Hello World");
 });
 
 
-app.get('/users', (req, res) => {
-    return res.json(users);
-});
+// app.get('/users', (req, res) => {
+//     return res.json(users);
+// });
 
 app.post('/register', async (req, res) => {
     const { email, password } = req.body;
 
-    if (!email || !password) {
-        return res.status(400).json({
-            message: 'Email and password are required.',
-        });
-    }
-
-    if (password.length < 6) {
-        return res.status(400).json({
-            message: 'Password must be at least 6 characters.',
-        });
-    }
-
-    const existingUser = users.find(user => user.email === email);
-
-    if (existingUser) {
-        return res.status(400).json({
-            message: 'User already exists.',
-        });
-    }
-
     try {
-        const salt = genSaltSync(10);
-        const hashedPassword = hashSync(password, salt);
-        const id = Math.random().toString(36).substr(2, 9);
-        const user: User = {
-            id,
-            email,
-            hashed_password: hashedPassword,
-        };
-        users.push(user);
+        // Check if the user already exists
+        const existingUser = await User.findOne({ email });
 
-        await client.upsertUser({
-            id,
+        if (existingUser) {
+            return res.status(400).json({ message: 'User already exists' });
+        }
+
+        // Hash the password
+        const hashedPassword = hashSync(password, 10);
+
+        // Create a new user
+        const newUser = new User({
             email,
-            name: email,
+            password: hashedPassword
         });
 
-        const token = client.createToken(id);
+        await newUser.save();
 
-        return res.json({
-            token,
-            user: {
-                id: user.id,
-                email: user.email,
+        // Create a new user in StreamClient
+        const userId = newUser._id.toString();
+        const userObject = {
+            id: userId,
+            role: 'user',
+            name: email, // You can use email or any other user information here
+            // Add other user details like image if available
+        };
+        await client.upsertUsers({
+            users: {
+                [userId]: userObject,
             },
         });
-    } catch (e) {
-        return res.status(500).json({
-            message: 'Internal server error.',
-        });
+
+        res.status(201).json({ message: 'User created successfully' });
+    } catch (error) {
+        console.error('Error registering user:', error);
+        res.status(500).json({ message: 'Internal server error' });
     }
 });
 
 app.post('/login', async (req, res) => {
     const { email, password } = req.body;
-    const user = users.find(user => user.email === email);
 
-    if (!user) {
-        return res.status(400).json({
-            message: 'User not found.',
-        });
+    try {
+        // Find the user by email
+        const user = await User.findOne({ email });
+
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Check if the password is correct
+        if (!compareSync(password, user.password!)) {
+            return res.status(401).json({ message: 'Invalid password' });
+        }
+
+        // Generate a token using StreamClient
+        const userId = user._id.toString();
+        const token = client.createToken(userId);
+
+        // Return the token along with user details
+        res.json({ userId, email, token });
+    } catch (error) {
+        console.error('Error logging in:', error);
+        res.status(500).json({ message: 'Internal server error' });
     }
-
-    const isValidPassword = compareSync(password, user.hashed_password);
-
-    if (!isValidPassword) {
-        return res.status(400).json({
-            message: 'Invalid credentials.',
-        });
-    }
-
-    const token = client.createToken(user.id);
-
-    return res.json({
-        token,
-        user: {
-            id: user.id,
-            email: user.email,
-        },
-    });
 });
 
 app.listen(PORT, () => {
