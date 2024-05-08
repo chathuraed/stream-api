@@ -154,6 +154,30 @@ app.get('/profile', verifyToken, async (req: any, res: any) => {
     }
 });
 
+app.get('/get-token', async (req, res) => {
+    try {
+        // Retrieve userId from the request parameters
+        const userId = req.query.userId!.toString();
+
+        // Find the user by userId
+        const user = await User.findById(userId);
+
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Generate a token for the user
+        const token = client.createToken(userId);
+
+        // Send the token in the response
+        res.json({ token });
+    } catch (error) {
+        console.error('Error fetching user profile:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
+
+
 app.listen(PORT, () => {
     console.log(`Server is listening on port ${PORT}`);
 });
