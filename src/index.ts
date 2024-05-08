@@ -2,11 +2,12 @@ import express from 'express';
 import dotenv from 'dotenv';
 import { compareSync, genSaltSync, hashSync } from 'bcrypt';
 import mongoose from 'mongoose';
+import jwt from 'jsonwebtoken';
 import { StreamClient } from '@stream-io/node-sdk';
 
 dotenv.config();
 
-const { PORT, STREAM_API_KEY, STREAM_API_SECRET, DB_STRING } = process.env;
+const { PORT, STREAM_API_KEY, STREAM_API_SECRET, DB_STRING, JWT_SECRET } = process.env;
 
 const client = new StreamClient(STREAM_API_KEY!, STREAM_API_SECRET!, { timeout: 3000 });
 
@@ -33,6 +34,24 @@ const UserSchema = new mongoose.Schema({
 });
 
 const User = mongoose.model('User', UserSchema);
+
+// Middleware to verify JWT token
+const verifyToken = (req, res, next) => {
+    const token = req.headers['authorization'];
+
+    if (!token) {
+        return res.status(401).json({ message: 'Access token is required' });
+    }
+
+    jwt.verify(token, JWT_SECRET!, (err, decoded) => {
+        if (err) {
+            return res.status(401).json({ message: 'Invalid token' });
+        }
+
+        req.userId = decoded.userId;
+        next();
+    });
+};
 
 app.get('/', (req, res) => {
     res.send("Hello World");
@@ -104,12 +123,33 @@ app.post('/login', async (req, res) => {
 
         // Generate a token using StreamClient
         const userId = user._id.toString();
-        const token = client.createToken(userId);
+        const accessToken = jwt.sign({ userId: user._id.toString() }, JWT_SECRET!, { expiresIn: '1h' });
+        const chatToken = client.createToken(userId);
 
         // Return the token along with user details
-        res.json({ userId, email, token });
+        res.json({ userId, email, accessToken, chatToken });
     } catch (error) {
         console.error('Error logging in:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
+
+app.get('/profile', verifyToken, async (req, res) => {
+    try {
+        const user = await User.findById(req.userId);
+
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        const userId = user._id.toString();
+        const accessToken = jwt.sign({ userId: user._id.toString() }, JWT_SECRET!, { expiresIn: '1h' });
+        const chatToken = client.createToken(userId);
+
+        // Return user profile
+        res.json({ userId: user._id, email: user.email, accessToken, chatToken  });
+    } catch (error) {
+        console.error('Error fetching user profile:', error);
         res.status(500).json({ message: 'Internal server error' });
     }
 });
