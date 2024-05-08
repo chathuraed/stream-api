@@ -36,14 +36,14 @@ const UserSchema = new mongoose.Schema({
 const User = mongoose.model('User', UserSchema);
 
 // Middleware to verify JWT token
-const verifyToken = (req, res, next) => {
+const verifyToken = (req: any, res: any, next: any) => {
     const token = req.headers['authorization'];
 
     if (!token) {
         return res.status(401).json({ message: 'Access token is required' });
     }
 
-    jwt.verify(token, JWT_SECRET!, (err, decoded) => {
+    jwt.verify(token, JWT_SECRET!, (err: any, decoded: any) => {
         if (err) {
             return res.status(401).json({ message: 'Invalid token' });
         }
@@ -134,7 +134,7 @@ app.post('/login', async (req, res) => {
     }
 });
 
-app.get('/profile', verifyToken, async (req, res) => {
+app.get('/profile', verifyToken, async (req: any, res: any) => {
     try {
         const user = await User.findById(req.userId);
 
@@ -147,7 +147,7 @@ app.get('/profile', verifyToken, async (req, res) => {
         const chatToken = client.createToken(userId);
 
         // Return user profile
-        res.json({ userId: user._id, email: user.email, accessToken, chatToken  });
+        res.json({ userId: user._id, email: user.email, accessToken, chatToken });
     } catch (error) {
         console.error('Error fetching user profile:', error);
         res.status(500).json({ message: 'Internal server error' });
